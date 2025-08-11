@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kick the Bin</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#10131a">
+<style>
+  :root{
+    --bg:#0e0f13; --sky:#1b1f2a; --street:#232734; --line:#3a3f52;
+    --accent:#ffd54d; --bin:#9aa3ad; --bin-dark:#6f7883; --text:#e8ecf1; --ui:#11141b;
+    --skin:#f2c79e; --hair:#ffd54d; --trousers:#e89876; --shirt:#ffffff;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--sky),var(--bg));color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:12px}
+  header{display:grid;grid-template-columns:80px 1fr;gap:12px;align-items:center;margin-bottom:8px}
+  h1{font-size:clamp(18px,3.8vw,28px);margin:0;letter-spacing:.3px}
+  .sub{opacity:.9;font-size:.98rem;margin-top:2px}
+  .hud{display:flex;gap:12px;flex-wrap:wrap;font-weight:600;justify-content:flex-end}
+  .hud span{background:rgba(255,255,255,.06);padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.06)}
+  #banner{width:100%;max-width:80px;border-radius:10px;border:1px solid rgba(255,255,255,.1);box-shadow:0 4px 16px rgba(0,0,0,.35)}
+  #gameCanvas{width:100%;height:auto;border-radius:14px;display:block;background:
+      linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 50%),
+      linear-gradient(180deg, #2c3142 0%, #10131a 65%);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.06)}
+  .controls{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px}
+  .btn{background:var(--ui);border:1px solid rgba(255,255,255,.08);color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700;letter-spacing:.3px}
+  .btn:active{transform:translateY(1px)}
+  #kickBtn{margin-left:auto}
+  footer{opacity:.85;font-size:.95rem;margin-top:8px}
+  .tip{opacity:.75}
+  @media (pointer:coarse){
+    #kickBtn{position:sticky;bottom:6px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img id="banner" src="images/hero_tascha.png" alt="Tascha, blonde woman in white T-shirt and peach trousers">
+    <div>
+      <h1>Kick the Bin</h1>
+      <div class="sub">Help Tascha get home calm and peaceful by kicking as many bins as possible on the way.</div>
+    </div>
+    <div class="hud">
+      <span>Score: <strong id="score">0</strong></span>
+      <span>Lives: <strong id="lives">3</strong></span>
+      <span>Speed: <strong id="speed">1.0x</strong></span>
+    </div>
+  </header>
+
+  <canvas id="gameCanvas" width="960" height="360" aria-label="Kick the Bin game"></canvas>
+
+  <div class="controls">
+    <button class="btn" id="startBtn">▶ Start / Restart</button>
+    <button class="btn" id="pauseBtn">⏸ Pause</button>
+    <button class="btn" id="kickBtn">🦵 KICK</button>
+  </div>
+
+  <footer class="tip">
+    Desktop: press <b>Space</b>, <b>K</b>, or <b>Enter</b> to kick. Mobile: tap the <b>KICK</b> button or the game area.
+  </footer>
+</div>
+
+<script>
+// Register PWA service worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+  });
+}
+
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function fitHiDPI() {
+    const cssWidth = canvas.clientWidth;
+    const cssHeight = Math.round(cssWidth * (canvas.height / canvas.width));
+    canvas.style.height = cssHeight + 'px';
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.round(cssWidth * dpr);
+    const h = Math.round(cssHeight * dpr);
+    canvas.width = w; canvas.height = h;
+    scaleX = w / baseW; scaleY = h / baseH;
+  }
+  const baseW = 960, baseH = 360;
+  let scaleX = 1, scaleY = 1;
+  window.addEventListener('resize', fitHiDPI);
+  fitHiDPI();
+
+  const scoreEl = document.getElementById('score');
+  const livesEl = document.getElementById('lives');
+  const speedEl = document.getElementById('speed');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const kickBtn = document.getElementById('kickBtn');
+
+  const G = { running:false, paused:false, score:0, lives:3, tick:0, speed:230, spawnEvery:1100, lastSpawn:0, groundY: baseH-76, rngSeed: 24681357 };
+  function rng(){ G.rngSeed = (G.rngSeed * 1664525 + 1013904223) >>> 0; return G.rngSeed / 0xffffffff; }
+
+  // Load SVG sprite
+  const sprite = new Image();
+  sprite.src = 'images/tascha_sprite.svg';
+  const SPR_W = 128, SPR_H = 128;
+  const FRAME = { walk1:0, walk2:1, kick:2 };
+
+  const player = { x:180, y:0, w:32, h:60, walkPhase:0, kicking:false, kickTimer:0, perfectWindow:20, frame:FRAME.walk1 };
+  const bins = [];
+  const floatingText = [];
+
+  function resetGame(){
+    G.running = true; G.paused=false; G.score=0; G.lives=3; G.tick=0; G.speed=230; G.spawnEvery=1100; G.lastSpawn=0;
+    bins.length=0; player.kicking=false; player.kickTimer=0; player.walkPhase=0;
+    updateHUD();
+  }
+
+  function doKick(){
+    if(!G.running || G.paused) return;
+    player.kicking = true; player.kickTimer = 220; player.frame = FRAME.kick;
+    tryResolveKick();
+  }
+  window.addEventListener('keydown', (e)=>{
+    if([' ','Spacebar','Enter','k','K'].includes(e.key)){ e.preventDefault(); doKick(); }
+    else if(e.key==='p'||e.key==='P'){ togglePause(); }
+  });
+  canvas.addEventListener('pointerdown', doKick);
+  kickBtn.addEventListener('click', doKick);
+
+  startBtn.addEventListener('click', ()=>{ resetGame(); lastTime = performance.now(); requestAnimationFrame(loop); });
+  function togglePause(){ if(!G.running) return; G.paused = !G.paused; if(!G.paused){ lastTime = performance.now(); requestAnimationFrame(loop);} }
+  pauseBtn.addEventListener('click', togglePause);
+
+  function updateHUD(){ scoreEl.textContent = G.score; livesEl.textContent = G.lives; speedEl.textContent = (G.speed/230).toFixed(1)+'x'; }
+
+  function spawnBin(){
+    const w = 34 + Math.round(rng()*10);
+    bins.push({ x: baseW + 40, y: G.groundY-30, w, h: 30, kicked:false, vx: -G.speed/1000*baseW, vy:0, rot:0, spin:0, scored:false, missed:false });
+  }
+
+  function tryResolveKick(){
+    let best = null, bestDx = 9999;
+    for(const b of bins){
+      if(b.kicked || b.missed) continue;
+      const dx = (b.x - (player.x + 24));
+      if(dx >= -8 && dx < bestDx && Math.abs(b.y - (G.groundY-30)) < 6){ bestDx = dx; best = b; }
+    }
+    if(best && bestDx < 38){
+      best.kicked = true;
+      best.vx = 3.8 + rng()*1.2; best.vy = -5.6 - rng()*1.5; best.spin = (rng()<0.5?-1:1)*(0.06 + rng()*0.05);
+      const perfect = Math.abs(bestDx) <= player.perfectWindow/2; const pts = perfect?20:10;
+      G.score += pts; floatingText.push({x: player.x+18, y: player.y-10, text: perfect?'+20 Perfect!':'+10', life:650});
+      updateHUD();
+    } else {
+      floatingText.push({x: player.x+18, y: player.y-10, text:'Miss', life:450});
+    }
+  }
+
+  function rect(x,y,w,h,c){ ctx.fillStyle=c; ctx.fillRect(x*scaleX, y*scaleY, w*scaleX, h*scaleY); }
+  function drawStreet(){
+    const g = G.groundY;
+    rect(0,g, baseW, baseH-g, '#1c202b');
+    const dashW = 34, gap = 22;
+    ctx.save(); ctx.fillStyle = '#3c4153';
+    for(let x=0;x<baseW;x+=dashW+gap){ rect(x, g+18, dashW, 4, '#3c4153'); }
+    ctx.restore();
+    rect(0, g-80, baseW, 6, '#2b3043'); rect(0, g-46, baseW, 4, '#2a2f40');
+  }
+  function drawBin(b){
+    ctx.save(); ctx.translate((b.x + b.w/2)*scaleX, (b.y + b.h/2)*scaleY); ctx.rotate(b.rot);
+    const BW=b.w*scaleX, BH=b.h*scaleY; const body=new Path2D(); body.rect(-BW/2,-BH/2,BW,BH);
+    ctx.fillStyle = getVar('--bin'); ctx.fill(body); ctx.fillStyle=getVar('--bin-dark'); ctx.fillRect(-BW/2,-BH/2-6,BW,8);
+    ctx.fillStyle='#20242f'; ctx.beginPath(); ctx.arc(-BW/2+6, BH/2+2, 4*scaleX, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(BW/2-6, BH/2+2, 4*scaleX, 0, Math.PI*2); ctx.fill(); ctx.restore();
+  }
+  function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function drawPlayer(){
+    const baseY = G.groundY;
+    const bob = Math.sin(player.walkPhase)*2.2;
+    const y = baseY - 74 + bob; // align sprite to road
+    player.y = y;
+
+    // pick frame
+    if(player.kicking){
+      player.frame = FRAME.kick;
+    } else {
+      player.frame = (player.walkPhase % 1.0) < 0.5 ? FRAME.walk1 : FRAME.walk2;
+    }
+
+    const sx = SPR_W * player.frame;
+    const sy = 0;
+    const dw = 64, dh = 64; // on-canvas size
+    const dx = (player.x-10)*scaleX, dy = (y-64)*scaleY;
+    if(sprite.complete){
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(sprite, sx, sy, SPR_W, SPR_H, dx, dy, dw*scaleX, dh*scaleY);
+    } else {
+      // fallback: simple rect
+      rect(player.x, y-60, 32, 60, '#0b0b0e');
+    }
+  }
+
+  let lastTime = 0;
+  function loop(now){
+    if(!G.running) return;
+    if(G.paused){ drawOverlay('Paused'); return; }
+    const dt = Math.min(50, now - lastTime); lastTime = now;
+    step(dt); draw(); requestAnimationFrame(loop);
+  }
+
+  function step(dt){
+    G.tick += dt;
+    G.speed = Math.min(420, 230 + (G.tick/1000)*12);
+    G.spawnEvery = Math.max(620, 1100 - (G.tick/1000)*8);
+    updateHUD();
+
+    if(performance.now() - G.lastSpawn > G.spawnEvery){ spawnBin(); G.lastSpawn = performance.now() + (rng()<0.2 ? -200: 0); }
+    player.walkPhase += dt/180;
+    if(player.kicking){ player.kickTimer -= dt; if(player.kickTimer <= 0) player.kicking = false; }
+
+    for(const b of bins){
+      if(!b.kicked){ b.x -= (G.speed * (dt/1000)); }
+      else{ b.x += b.vx * (dt/16); b.y += b.vy * (dt/16); b.vy += 0.22; b.rot += b.spin; }
+      if(!b.kicked && !b.missed && b.x + b.w < player.x + 12){
+        b.missed = true; G.lives -= 1; floatingText.push({x: player.x+10, y: player.y-14, text:'-1 life', life:650}); updateHUD();
+        if(G.lives <= 0){ gameOver(); return; }
+      }
+    }
+    for(let i=bins.length-1;i>=0;i--){
+      const b=bins[i]; if(b.x < -120 || b.x > baseW+200 || b.y > baseH+80) bins.splice(i,1);
+    }
+    for(let i=floatingText.length-1;i>=0;i--){
+      const f=floatingText[i]; f.life -= dt; f.y -= 0.05*dt; if(f.life<=0) floatingText.splice(i,1);
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const dots = 36; ctx.fillStyle='rgba(255,255,255,0.06)';
+    for(let i=0;i<dots;i++){ const x=(i*73 + (G.tick*0.02))%baseW; const y=40 + (i*37)%140; ctx.beginPath(); ctx.arc(x*scaleX, y*scaleY, 1.6*scaleX, 0, Math.PI*2); ctx.fill(); }
+    drawStreet();
+    for(const b of bins){ drawBin(b); }
+    drawPlayer();
+    if(G.running){ ctx.save(); ctx.globalAlpha=0.08; rect(player.x+6, G.groundY-42, 50, 40, getVar('--accent')); ctx.restore(); }
+    ctx.font = `${14*scaleY}px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const f of floatingText){ ctx.globalAlpha = Math.max(0, Math.min(1, f.life/650)); ctx.fillStyle=getVar('--accent'); ctx.fillText(f.text, f.x*scaleX, (f.y)*scaleY); }
+    ctx.globalAlpha = 1;
+    if(!G.running){ drawOverlay('Kick the Bin', 'Help Tascha get home calm and peaceful by kicking as many bins as possible.'); }
+  }
+
+  function drawOverlay(title, subtitle){
+    ctx.save(); ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.restore();
+    ctx.fillStyle = getVar('--text'); ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = `${28*scaleY}px/1.2 Inter, system-ui, Arial`; ctx.fillText(title, (baseW/2)*scaleX, (baseH/2-10)*scaleY);
+    ctx.font = `${16*scaleY}px/1.2 Inter, system-ui, Arial`; if(subtitle) ctx.fillText(subtitle, (baseW/2)*scaleX, (baseH/2+22)*scaleY);
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>
