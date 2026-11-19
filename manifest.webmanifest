@@ -1,0 +1,13 @@
+{
+  "name": "Kick the Bin",
+  "short_name": "Kick the Bin",
+  "description": "Dump what's on your mind, keep what matters, kick the rest in the bin.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111318",
+  "theme_color": "#111318",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

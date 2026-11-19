@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kick the Bin</title>
+  <meta name="description" content="Dump what's on your mind, keep what matters, kick the rest in the bin.">
+  <meta name="theme-color" content="#111318">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><use href="#bin-icon"/></svg>
+        <h1>Kick the Bin</h1>
+      </div>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme (T)">◐</button>
+    </header>
+
+    <section class="stats" aria-label="Your stats">
+      <div class="stat"><span class="stat-num" id="statBinned">0</span><span class="stat-label">kicked this week</span></div>
+      <div class="stat"><span class="stat-num" id="statDone">0</span><span class="stat-label">done this week</span></div>
+      <div class="stat"><span class="stat-num" id="statStreak">0</span><span class="stat-label">day streak</span></div>
+    </section>
+
+    <form class="dump" id="dumpForm" autocomplete="off">
+      <input id="dumpInput" type="text" maxlength="200" placeholder="What's on your mind? Press Enter…" aria-label="New thought">
+      <button type="submit" class="btn primary">Dump</button>
+    </form>
+    <p class="hint" id="hint">Tip: paste several lines at once to dump them all. Swipe a card right for <b>Today</b>, left to <b>kick</b>.</p>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="inbox" class="tab active">Inbox <span class="count" data-count="inbox">0</span></button>
+      <button role="tab" data-tab="today" class="tab">Today <span class="count" data-count="today">0</span></button>
+      <button role="tab" data-tab="later" class="tab">Later <span class="count" data-count="later">0</span></button>
+      <button role="tab" data-tab="done" class="tab">Done <span class="count" data-count="done">0</span></button>
+    </nav>
+
+    <main>
+      <ul class="list" id="list" aria-live="polite"></ul>
+      <div class="empty" id="empty"></div>
+    </main>
+
+    <footer class="foot">
+      <button class="link-btn" id="exportBtn">Export</button>
+      <label class="link-btn">Import<input type="file" id="importInput" accept="application/json" hidden></label>
+      <button class="link-btn" id="clearDoneBtn">Clear done</button>
+      <span class="keys">Shortcuts: <kbd>/</kbd> new · <kbd>1</kbd>–<kbd>4</kbd> tabs · <kbd>Z</kbd> undo</span>
+    </footer>
+  </div>
+
+  <button class="bin" id="bin" aria-label="The bin" title="The bin">
+    <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#bin-icon"/></svg>
+    <span class="bin-count" id="binCount">0</span>
+  </button>
+
+  <div class="toast" id="toast" role="status" hidden>
+    <span id="toastMsg"></span>
+    <button class="link-btn" id="undoBtn">Undo</button>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="bin-icon" viewBox="0 0 64 64">
+      <g class="bin-lid"><rect x="10" y="12" width="44" height="7" rx="3.5" fill="currentColor"/><rect x="26" y="6" width="12" height="7" rx="3" fill="none" stroke="currentColor" stroke-width="3"/></g>
+      <path d="M14 22h36l-3.5 34a4 4 0 0 1-4 3.6H21.5a4 4 0 0 1-4-3.6z" fill="currentColor" opacity=".9"/>
+      <path d="M25 28v24M32 28v24M39 28v24" stroke="var(--bg, #111)" stroke-width="3" stroke-linecap="round"/>
+    </symbol>
+  </svg>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
